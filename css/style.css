@@ -195,10 +195,11 @@ aside h3 {
 .help { color: var(--muted); font-size: 12px; line-height: 1.75; }
 .help p { margin-bottom: 4px; }
 
-/* 左下角版權：字體與 .help 說明文字一致 */
+/* 左下角版權：字體與 .help 說明文字一致，水平置中 */
 .copyright {
   margin-top: auto;
   padding-top: 10px;
+  text-align: center;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.75;
