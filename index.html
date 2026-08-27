@@ -86,7 +86,6 @@
       <span class="sub">THREE.JS · 3D 互動棋盤 · 人機對弈 / 雙人對戰</span>
     </div>
     <div id="hud">
-      <div id="turn"><span id="turnDot"></span><span id="turnText">紅方先行</span></div>
       <select id="modeSel" aria-label="對弈模式" title="選擇對弈模式">
         <option value="easy">人機・簡單</option>
         <option value="medium" selected>人機・中等</option>
@@ -131,7 +130,9 @@
       </footer>
     </aside>
 
-    <div id="stage"></div>
+    <div id="stage">
+      <div id="turn" aria-live="polite"><span id="turnDot"></span><span id="turnText">紅方先行</span></div>
+    </div>
 
     <aside id="right">
       <h3>棋譜</h3>

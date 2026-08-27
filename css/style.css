@@ -46,16 +46,23 @@ h1 { font-size: 19px; letter-spacing: 6px; font-weight: 700; }
 
 #hud { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
+/* 回合狀態：浮動顯示在棋盤黑底右上角，不佔 header 空間 */
 #turn {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 6;
+  pointer-events: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 108px;
-  justify-content: center;
   padding: 7px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(58, 46, 34, 0.9);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(23, 18, 13, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   font-size: 14px;
 }
 #turnDot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); box-shadow: 0 0 9px var(--red); }
@@ -424,27 +431,56 @@ aside h3 {
   }
   #btnHelp { display: inline-flex; }
 
-  /* 吃子：兩側並排成單行細列 */
+  /* 吃子托盤：浮動貼在棋盤底部黑邊上，指標事件穿透可繼續轉視角 */
   #left {
-    order: 2;
-    border-right: none;
-    border-top: 1px solid var(--line);
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 6;
     flex-direction: row;
     align-items: stretch;
     gap: 8px;
-    width: 100%;
+    width: auto;
     max-height: none;
-    padding: 8px 10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    pointer-events: none;
   }
-  #left .tray { flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+  #left .tray {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: rgba(33, 26, 20, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
   #left .tray h3 { margin: 0; font-size: 11px; white-space: nowrap; }
   .chip { width: 22px; height: 22px; font-size: 13px; }
   .chips { min-height: 22px; }
   .chips em { font-size: 12px; }
   .help { display: none; }
   .copyright { display: none; }
-  /* 從「⋯ → 玩法說明」展開 */
-  #left.show-help { flex-direction: column; overflow-y: auto; max-height: 44dvh; }
+  /* 從「⋯ → 玩法說明」展開成浮動說明面板 */
+  #left.show-help {
+    pointer-events: auto;
+    flex-direction: column;
+    background: rgba(23, 19, 16, 0.96);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    max-height: 48dvh;
+    overflow-y: auto;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  #left.show-help .tray { pointer-events: auto; }
   #left.show-help .help { display: block; }
 
   #checkBanner { font-size: 54px; letter-spacing: 10px; padding-left: 10px; }
@@ -455,7 +491,7 @@ aside h3 {
   #hud { gap: 5px; }
   h1 { font-size: 13px; letter-spacing: 1px; }
   button, #modeSel { padding: 5px 8px; font-size: 11.5px; letter-spacing: 0.5px; }
-  #turn { padding: 4px 8px; font-size: 11.5px; gap: 5px; }
+  #turn { top: 9px; right: 9px; padding: 4px 10px; font-size: 11.5px; gap: 5px; }
   #turnDot { width: 8px; height: 8px; }
   #btnMore { padding: 5px 9px; font-size: 15px; }
 }
