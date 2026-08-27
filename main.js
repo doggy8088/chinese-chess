@@ -7,7 +7,7 @@ import {
   ROWS, COLS, RED, BLACK,
   initialBoard, legalMoves, applyMove, inCheck,
   hasAnyLegalMove, name, notation, hashBoard,
-} from './game.js?v=4db85cd210';
+} from './game.js?v=2886a7c63a';
 
 // ---------------- 常數 ----------------
 const CELL = 1;
@@ -429,7 +429,7 @@ let aiMoveStart = 0;
 let aiWorker = null;
 let aiModule = null;   // Worker 不可用時的主執行緒後備
 try {
-  aiWorker = new Worker(new URL('./ai-worker.js?v=4db85cd210', import.meta.url), { type: 'module' });
+  aiWorker = new Worker(new URL('./ai-worker.js?v=2886a7c63a', import.meta.url), { type: 'module' });
   aiWorker.onmessage = (e) => onAIResult(e.data);
   aiWorker.onerror = () => {
     aiWorker = null;
@@ -451,7 +451,7 @@ function requestAIMove() {
   if (aiWorker) {
     aiWorker.postMessage(payload);
   } else {
-    (aiModule ??= import('./ai.js?v=4db85cd210')).then(({ findBestMove }) => {
+    (aiModule ??= import('./ai.js?v=2886a7c63a')).then(({ findBestMove }) => {
       setTimeout(() => {
         if (token !== aiToken) return;
         onAIResult({ token, result: findBestMove(payload.board, payload.side, payload.level, payload.recent) });
@@ -791,6 +791,9 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 let downXY = null;
 renderer.domElement.addEventListener('pointerdown', (e) => { downXY = [e.clientX, e.clientY]; });
+// 拖曳／滾輪結束後記住視角（個人化，存瀏覽器）
+renderer.domElement.addEventListener('pointerup', queueSaveViewPrefs);
+renderer.domElement.addEventListener('wheel', queueSaveViewPrefs, { passive: true });
 
 renderer.domElement.addEventListener('click', (e) => {
   if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 8) {
@@ -1193,7 +1196,7 @@ function flyTo(pos, tgt, done) {
     // 補間途中需自行更新相機朝向（tick 可能正跳過 controls.update()），
     // 否則抵達後視線方向是舊的
     camera.lookAt(tgtNow);
-  }, done, 0, 'camera');
+  }, () => { saveViewPrefs(); if (done) done(); }, 0, 'camera');
 }
 function cancelCameraTween() {
   for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i].tag === 'camera') tweens.splice(i, 1);
@@ -1229,10 +1232,52 @@ function syncLockUI() {
 btnLock.addEventListener('click', () => {
   viewLocked = !viewLocked;
   syncLockUI();
+  saveViewPrefs();
   // 以「現狀」固定：凍結當下視角與進行中的相機補間，不做歸位
   if (viewLocked) cancelCameraTween();
 });
 syncLockUI();
+
+// ---------------- 個人化：記住 3D 視角與固定視角設定（localStorage） ----------------
+const VIEW_PREF_KEY = 'xiangqi.viewPrefs.v1';
+let saveViewTimer = 0;
+function saveViewPrefs() {
+  try {
+    localStorage.setItem(VIEW_PREF_KEY, JSON.stringify({
+      pos: camera.position.toArray(),
+      tgt: controls.target.toArray(),
+      locked: viewLocked,
+      viewIdx,
+    }));
+  } catch { /* 無法寫入（如隱私模式）時靜默略過 */ }
+}
+function queueSaveViewPrefs() {
+  clearTimeout(saveViewTimer);
+  saveViewTimer = setTimeout(saveViewPrefs, 600); // 等慣性減速大致停止再存
+}
+function loadViewPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(VIEW_PREF_KEY) || 'null');
+    const okVec = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+    if (!p || !okVec(p.pos) || !okVec(p.tgt)) return null;
+    return p;
+  } catch { return null; }
+}
+// 啟動時還原個人化設定
+const savedPrefs = loadViewPrefs();
+if (savedPrefs) {
+  camera.position.fromArray(savedPrefs.pos);
+  controls.target.fromArray(savedPrefs.tgt);
+  camera.lookAt(controls.target);
+  if (savedPrefs.locked) {
+    viewLocked = true;
+    syncLockUI();
+  }
+  if (Number.isInteger(savedPrefs.viewIdx)) {
+    viewIdx = ((savedPrefs.viewIdx % CAMERA_VIEWS.length) + CAMERA_VIEWS.length) % CAMERA_VIEWS.length;
+  }
+}
+window.addEventListener('pagehide', saveViewPrefs);
 document.getElementById('btnAgain').addEventListener('click', newGame);
 
 // 全螢幕（含 Safari webkit 前綴）
