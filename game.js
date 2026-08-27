@@ -170,6 +170,17 @@ export function kingPos(b, side) {
   return null;
 }
 
+/** 局面雜湊字串（用於重複局面偵測） */
+export function hashBoard(b) {
+  let s = '';
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) {
+      const p = b[r][c];
+      s += p ? p.type + (p.side === RED ? 'r' : 'b') : '.';
+    }
+  return s;
+}
+
 /** 某一方是否被將（含白臉將：將帥同列相照） */
 export function inCheck(b, side) {
   if (kingsFacing(b)) return true;

@@ -1,9 +1,10 @@
 // ============================================================
 // 中國象棋 AI 引擎 —— negamax + alpha-beta 剪枝 + 靜態搜索
 // 純邏輯，可在 Web Worker 或主執行緒使用
-// 難度：easy（淺層＋隨機）/ medium（3 層）/ hard（迭代加深至 6 層）
+// 難度：easy（淺層＋隨機）/ medium（3 層）/ hard（迭代加深至 6 層，殘局更深）
+// 加強：置換表、killer/history 排序、將軍延伸、應將靜態搜索、重複局面偵測
 // ============================================================
-import { ROWS, COLS, RED, BLACK, getMoves, legalMoves, kingsFacing, kingPos } from './game.js';
+import { ROWS, COLS, RED, BLACK, getMoves, legalMoves, kingsFacing, kingPos, inCheck, hashBoard } from './game.js';
 
 const INF = 1e9;
 const MATE = 100000;
@@ -91,6 +92,42 @@ export function evaluate(b) {
 const other = (side) => (side === RED ? BLACK : RED);
 const evalFor = (b, side) => (side === RED ? evaluate(b) : -evaluate(b));
 
+// ---------------- Zobrist 雜湊（置換表用） ----------------
+const TYPE_ID = { K: 0, A: 1, B: 2, N: 3, R: 4, C: 5, P: 6 };
+const PIECE_IDX = { [RED]: {}, [BLACK]: {} };
+for (const [t, i] of Object.entries(TYPE_ID)) {
+  PIECE_IDX[RED][t] = i;
+  PIECE_IDX[BLACK][t] = i + 7;
+}
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (t ^ (t >>> 14)) >>> 0;
+  };
+}
+const zrnd = mulberry32(0x1A2B3C4D);
+const ZA = [], ZB = [];
+for (let i = 0; i < 14; i++) {
+  ZA.push(Array.from({ length: 90 }, () => zrnd() & 0x1FFFFF)); // 21-bit，確保組合鍵不超過 2^53
+  ZB.push(Array.from({ length: 90 }, () => zrnd() >>> 0));
+}
+const SIDE_A = zrnd() & 0x1FFFFF, SIDE_B = zrnd() >>> 0;
+let za = 0, zb = 0;
+
+function initZobrist(b, side) {
+  za = 0; zb = 0;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) {
+      const p = b[r][c];
+      if (!p) continue;
+      const i = PIECE_IDX[p.side][p.type], s = r * 9 + c;
+      za ^= ZA[i][s]; zb ^= ZB[i][s];
+    }
+  if (side === BLACK) { za ^= SIDE_A; zb ^= SIDE_B; }
+}
+
 /** 產生某方所有伪合法著法（含飛將吃王，送將由搜索以「被吃王」懲罰） */
 function genMoves(b, side) {
   const out = [];
@@ -108,21 +145,50 @@ function genMoves(b, side) {
 }
 
 const make = (b, m) => {
+  const p = b[m.fr][m.fc];
   const cap = b[m.tr][m.tc];
-  b[m.tr][m.tc] = b[m.fr][m.fc];
+  b[m.tr][m.tc] = p;
   b[m.fr][m.fc] = null;
+  const pi = PIECE_IDX[p.side][p.type];
+  za ^= ZA[pi][m.fr * 9 + m.fc] ^ ZA[pi][m.tr * 9 + m.tc];
+  zb ^= ZB[pi][m.fr * 9 + m.fc] ^ ZB[pi][m.tr * 9 + m.tc];
+  if (cap) {
+    const ci = PIECE_IDX[cap.side][cap.type];
+    za ^= ZA[ci][m.tr * 9 + m.tc];
+    zb ^= ZB[ci][m.tr * 9 + m.tc];
+  }
+  za ^= SIDE_A; zb ^= SIDE_B;
   return cap;
 };
 const unmake = (b, m, cap) => {
-  b[m.fr][m.fc] = b[m.tr][m.tc];
+  const p = b[m.tr][m.tc];
+  b[m.fr][m.fc] = p;
   b[m.tr][m.tc] = cap;
+  const pi = PIECE_IDX[p.side][p.type];
+  za ^= ZA[pi][m.fr * 9 + m.fc] ^ ZA[pi][m.tr * 9 + m.tc];
+  zb ^= ZB[pi][m.fr * 9 + m.fc] ^ ZB[pi][m.tr * 9 + m.tc];
+  if (cap) {
+    const ci = PIECE_IDX[cap.side][cap.type];
+    za ^= ZA[ci][m.tr * 9 + m.tc];
+    zb ^= ZB[ci][m.tr * 9 + m.tc];
+  }
+  za ^= SIDE_A; zb ^= SIDE_B;
 };
 
-/** MVV-LVA：先吃大子、用小子吃 */
-function orderMoves(b, moves) {
+/** MVV-LVA ＋ 置換表著法 ＋ killer/history：先吃大子、用小子吃 */
+const sameMove = (a, m2) => a && a.fr === m2.fr && a.fc === m2.fc && a.tr === m2.tr && a.tc === m2.tc;
+let killers = [];
+let histH = { [RED]: {}, [BLACK]: {} };
+
+function orderMoves(b, moves, ttMove, side, ply) {
   for (const m of moves) {
+    if (ttMove && sameMove(ttMove, m)) { m.o = 1e9; continue; }
     const v = b[m.tr][m.tc];
-    m.o = v ? VAL[v.type] * 8 - VAL[b[m.fr][m.fc].type] : 0;
+    if (v) { m.o = VAL[v.type] * 8 - VAL[b[m.fr][m.fc].type]; continue; }
+    const k = killers[ply];
+    if (sameMove(k && k[0], m)) { m.o = 1e6; continue; }
+    if (sameMove(k && k[1], m)) { m.o = 1e6 - 1; continue; }
+    m.o = histH[side][b[m.fr][m.fc].type + (m.tr * 9 + m.tc)] || 0;
   }
   moves.sort((a, b2) => b2.o - a.o);
 }
@@ -131,6 +197,53 @@ function orderMoves(b, moves) {
 const TIMEOUT = Symbol('timeout');
 let deadline = 0;
 let nodes = 0;
+
+/** 快速判斷 side 是否被將軍（與 game.js inCheck 等價，但直接掃攻擊線，供搜索內層使用） */
+const N_STEPS = [[-2, -1, [-1, 0]], [-2, 1, [-1, 0]], [-1, 2, [0, 1]], [-1, -2, [0, -1]], [1, 2, [0, 1]], [1, -2, [0, -1]], [2, 1, [1, 0]], [2, -1, [1, 0]]];
+function inCheckFast(b, side) {
+  const foe = other(side);
+  const k = kingPos(b, side);
+  if (!k) return true;
+  if (kingsFacing(b)) return true;
+  for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    let r = k.r + dr, c = k.c + dc, screen = false;
+    while (r >= 0 && r < 10 && c >= 0 && c < 9) {
+      const p = b[r][c];
+      if (!screen) {
+        if (p) {
+          if (p.side === foe && p.type === 'R') return true;
+          screen = true;
+        }
+      } else if (p) {
+        if (p.side === foe && p.type === 'C') return true;
+        break;
+      }
+      r += dr; c += dc;
+    }
+  }
+  for (const [dr, dc, leg] of N_STEPS) {
+    const nr = k.r - dr, nc = k.c - dc;
+    if (nr < 0 || nr >= 10 || nc < 0 || nc >= 9) continue;
+    const p = b[nr][nc];
+    if (p && p.side === foe && p.type === 'N' && !b[nr + leg[0]][nc + leg[1]]) return true;
+  }
+  const dir = foe === RED ? 1 : -1;
+  for (const [dr, dc] of [[-dir, 0], [0, 1], [0, -1]]) {
+    const nr = k.r + dr, nc = k.c + dc;
+    if (nr < 0 || nr >= 10 || nc < 0 || nc >= 9) continue;
+    const p = b[nr][nc];
+    if (!p || p.side !== foe || p.type !== 'P') continue;
+    if (dc !== 0) { // 側面攻擊須過河
+      const crossed = foe === RED ? nr >= 5 : nr <= 4;
+      if (!crossed) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+const TT_EXACT = 0, TT_LOWER = 1, TT_UPPER = 2;
+let TT = new Map();
 
 function checkTime() {
   if (deadline && (++nodes & 1023) === 0 && Date.now() > deadline) throw TIMEOUT;
@@ -144,16 +257,24 @@ function quiesce(b, side, alpha, beta, ply) {
     const t = b[m.tr][m.tc];
     if (t && t.type === 'K') return MATE - ply;
   }
-  const stand = evalFor(b, side);
-  if (ply > 24) return stand;
-  let best = stand;
-  if (best >= beta) return best;
-  if (best > alpha) alpha = best;
-  const caps = moves.filter((m) => b[m.tr][m.tc]);
-  orderMoves(b, caps);
-  for (const m of caps) {
+  const checked = inCheckFast(b, side);
+  let best, stand = 0;
+  if (checked) {
+    // 被將軍時不能「站著估值」，必須展開所有應將著法，否則看不見連將殺
+    if (ply > 32) return evalFor(b, side);
+    best = -INF;
+  } else {
+    stand = evalFor(b, side);
+    if (ply > 24) return stand;
+    if (stand >= beta) return stand;
+    if (stand > alpha) alpha = stand;
+    best = stand;
+  }
+  const cands = checked ? moves : moves.filter((m) => b[m.tr][m.tc]);
+  orderMoves(b, cands, null, side, ply);
+  for (const m of cands) {
     const cap = b[m.tr][m.tc];
-    if (stand + VAL[cap.type] + 60 < alpha) continue; // delta 剪枝
+    if (!checked && cap && stand + VAL[cap.type] + 60 < alpha) continue; // delta 剪枝
     make(b, m);
     const sc = -quiesce(b, other(side), -beta, -alpha, ply + 1);
     unmake(b, m, cap);
@@ -161,43 +282,75 @@ function quiesce(b, side, alpha, beta, ply) {
     if (sc > alpha) alpha = sc;
     if (alpha >= beta) break;
   }
+  if (checked && best === -INF) return -MATE + ply; // 無路可解＝被將死
   return best;
 }
 
 function negamax(b, side, depth, alpha, beta, ply) {
   checkTime();
+  const checked = inCheckFast(b, side);
+  if (checked && ply < 32) depth++; // 將軍延伸：連將殺與解殺看得更遠
   if (depth <= 0) return quiesce(b, side, alpha, beta, ply);
+
+  const key = za * 4294967296 + zb;
+  const hit = TT.get(key);
+  let ttMove = null;
+  if (hit) {
+    ttMove = hit.m;
+    if (hit.d >= depth) {
+      let s = hit.s;
+      if (s > MATE - 1000) s -= ply; else if (s < -(MATE - 1000)) s += ply;
+      if (hit.f === TT_EXACT) return s;
+      if (hit.f === TT_LOWER && s >= beta) return s;
+      if (hit.f === TT_UPPER && s <= alpha) return s;
+    }
+  }
+
   const moves = genMoves(b, side);
   if (!moves.length) return -MATE + ply; // 無子可動：將死或困斃皆輸
-  orderMoves(b, moves);
-  let best = -INF;
+  orderMoves(b, moves, ttMove, side, ply);
+  let best = -INF, bestM = moves[0], flag = TT_UPPER;
   for (const m of moves) {
     const cap = b[m.tr][m.tc];
     if (cap && cap.type === 'K') return MATE - ply;
     make(b, m);
     const sc = -negamax(b, other(side), depth - 1, -beta, -alpha, ply + 1);
     unmake(b, m, cap);
-    if (sc > best) best = sc;
-    if (sc > alpha) alpha = sc;
-    if (alpha >= beta) break;
+    if (sc > best) { best = sc; bestM = m; }
+    if (sc > alpha) { alpha = sc; flag = TT_EXACT; }
+    if (alpha >= beta) {
+      flag = TT_LOWER;
+      if (!cap) { // 安靜著法致截斷：記 killer 與 history
+        const k = killers[ply] || (killers[ply] = []);
+        if (!sameMove(k[0], m)) { k[1] = k[0]; k[0] = { fr: m.fr, fc: m.fc, tr: m.tr, tc: m.tc }; }
+        const hk = b[m.fr][m.fc].type + (m.tr * 9 + m.tc);
+        histH[side][hk] = Math.min((histH[side][hk] || 0) + depth * depth, 5000);
+      }
+      break;
+    }
   }
+  let sStore = best;
+  if (sStore > MATE - 1000) sStore += ply; else if (sStore < -(MATE - 1000)) sStore -= ply;
+  TT.set(key, { d: depth, s: sStore, f: flag, m: bestM });
   return best;
 }
 
 // ---------------- 難度設定 ----------------
+// window：與最佳著法分差在此範圍內的著法隨機挑選（兼顧變化與強度）
 const LEVELS = {
-  easy:   { maxDepth: 1, timeMs: 400,  jitter: 50, randomRate: 0.3 },
-  medium: { maxDepth: 3, timeMs: 900,  jitter: 8,  randomRate: 0 },
-  hard:   { maxDepth: 6, timeMs: 2200, jitter: 2,  randomRate: 0 },
+  easy:   { maxDepth: 1, timeMs: 400,  window: 50, randomRate: 0.3 },
+  medium: { maxDepth: 3, timeMs: 900,  window: 8,  randomRate: 0 },
+  hard:   { maxDepth: 6, timeMs: 2200, window: 0,  randomRate: 0 },
 };
 
 /**
  * 找出 side 方的最佳著法。
+ * @param {Array} recent 近期局面雜湊（hashBoard 字串），會懲罰走回原局面的著法
  * @returns {{from:{r,c}, to:{r,c}, score:number, depth:number}|null} 無合法著法時回 null
  */
-export function findBestMove(srcBoard, side, level = 'medium') {
+export function findBestMove(srcBoard, side, level = 'medium', recent = []) {
   const cfg = LEVELS[level] || LEVELS.medium;
-  const b = srcBoard.map((row) => row.map((p) => (p ? { type: p.type, side: p.side } : null)));
+  let b = srcBoard.map((row) => row.map((p) => (p ? { type: p.type, side: p.side } : null)));
 
   // 根節點只考慮「嚴格合法」的著法（不送將、不對臉）
   const rootMoves = [];
@@ -216,12 +369,28 @@ export function findBestMove(srcBoard, side, level = 'medium') {
     return fmt(rootMoves[(Math.random() * rootMoves.length) | 0], 0, 0);
   }
 
+  // 殘局子少時加深搜索
+  let pieceCount = 0;
+  for (const row of b) for (const p of row) if (p) pieceCount++;
+  let maxDepth = cfg.maxDepth;
+  if (level === 'hard' && pieceCount <= 10) maxDepth += 2;
+  else if (level === 'medium' && pieceCount <= 8) maxDepth += 1;
+
   nodes = 0;
   deadline = Date.now() + cfg.timeMs;
+  TT = new Map();
+  killers = [];
+  histH = { [RED]: {}, [BLACK]: {} };
+  initZobrist(b, side);
   let scored = rootMoves.map((m) => ({ m, score: 0 }));
   let completed = 0;
+  const freshBoard = () => {
+    const nb = srcBoard.map((row) => row.map((p) => (p ? { type: p.type, side: p.side } : null)));
+    initZobrist(nb, side);
+    return nb;
+  };
 
-  for (let d = 1; d <= cfg.maxDepth; d++) {
+  for (let d = 1; d <= maxDepth; d++) {
     const iter = [];
     let alpha = -INF;
     try {
@@ -238,8 +407,10 @@ export function findBestMove(srcBoard, side, level = 'medium') {
         if (sc > alpha) alpha = sc;
       }
     } catch (err) {
-      if (err === TIMEOUT) break;
-      throw err;
+      if (err !== TIMEOUT) throw err;
+      // 逾時例外會跳過搜索內層的 make/unmake，直接換新盤面
+      b = freshBoard();
+      break;
     }
     iter.sort((a, b2) => b2.score - a.score);
     scored = iter;
@@ -248,11 +419,62 @@ export function findBestMove(srcBoard, side, level = 'medium') {
   }
   deadline = 0;
 
-  // 依難度加入隨機擾動，讓走法有變化
-  let best = scored[0], bestKey = -Infinity;
-  for (const e of scored) {
-    const key = e.score + (cfg.jitter ? (Math.random() * 2 - 1) * cfg.jitter : 0);
-    if (key > bestKey) { bestKey = key; best = e; }
+  // 沒有殺棋時：把接近最佳的著法以全窗口重搜，取得精確分數再隨機挑選。
+  // （窄窗口下的 fail-low 分數只是上界，直接拿來挑會誤選弱著）
+  if (completed >= 1 && scored[0].score <= MATE - 200 && cfg.window > 0) {
+    const topScore = scored[0].score;
+    const near = scored.filter((e) => topScore - e.score <= cfg.window).slice(0, 6);
+    try {
+      deadline = Date.now() + cfg.timeMs;
+      for (const e of near) {
+        const cap = make(b, e.m);
+        e.score = -negamax(b, other(side), completed - 1, -INF, INF, 1);
+        unmake(b, e.m, cap);
+      }
+    } catch (err) {
+      b = freshBoard();
+      if (err !== TIMEOUT) throw err;
+    }
+    deadline = 0;
+    near.sort((a, b2) => b2.score - a.score);
+    // 會走回近期出現過局面的著法扣分，避免殘局來回搗棋（殺棋不受影響）
+    if (recent && recent.length) {
+      const seen = new Map();
+      for (const h of recent) seen.set(h, (seen.get(h) || 0) + 1);
+      for (const e of near) {
+        if (Math.abs(e.score) > MATE - 200) continue;
+        const cap = make(b, e.m);
+        const h = hashBoard(b);
+        unmake(b, e.m, cap);
+        const n = seen.get(h) || 0;
+        if (n) e.score -= 12 * n;
+      }
+      near.sort((a, b2) => b2.score - a.score);
+    }
+    const best = near[0].score;
+    const top = near.filter((e) => best - e.score <= cfg.window);
+    const pick = top[(Math.random() * top.length) | 0];
+    return fmt(pick.m, pick.score, completed);
   }
-  return fmt(best.m, best.score, completed);
+
+  // 會走回近期出現過局面的著法扣分，避免殘局來回搗棋（殺棋不受影響）
+  if (recent && recent.length) {
+    const seen = new Map();
+    for (const h of recent) seen.set(h, (seen.get(h) || 0) + 1);
+    for (const e of scored) {
+      if (Math.abs(e.score) > MATE - 200) continue;
+      const cap = make(b, e.m);
+      const h = hashBoard(b);
+      unmake(b, e.m, cap);
+      const n = seen.get(h) || 0;
+      if (n) e.score -= 12 * n;
+    }
+    scored.sort((a, b2) => b2.score - a.score);
+  }
+
+  // hard（window=0）或有殺棋：直接取最佳著法（同分著法隨機）
+  const topScore = scored[0].score;
+  const top = scored.filter((e) => e.score === topScore);
+  const pick = top[(Math.random() * top.length) | 0];
+  return fmt(pick.m, pick.score, completed);
 }

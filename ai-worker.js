@@ -2,11 +2,11 @@
 import { findBestMove } from './ai.js';
 
 self.onmessage = (e) => {
-  const { board, side, level, token } = e.data;
+  const { board, side, level, token, recent } = e.data;
   const t0 = Date.now();
   let result = null;
   try {
-    result = findBestMove(board, side, level);
+    result = findBestMove(board, side, level, recent);
   } catch (err) {
     self.postMessage({ token, error: String(err) });
     return;

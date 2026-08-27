@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   ROWS, COLS, RED, BLACK,
   initialBoard, legalMoves, applyMove, inCheck,
-  hasAnyLegalMove, name, notation,
+  hasAnyLegalMove, name, notation, hashBoard,
 } from './game.js';
 
 // ---------------- 常數 ----------------
@@ -412,6 +412,7 @@ let selected = null;   // {r,c}
 let legal = [];        // 選中子的合法著法
 let pieces = [];       // 所有棋子 mesh
 let history = [];      // {from,to,captured,nota}
+let posHistory = [];   // 每步之後的局面雜湊，供 AI 避免重複局面
 let capturedBy = { [RED]: [], [BLACK]: [] };
 let over = false, winner = null, busy = false;
 let gameStartTime = Date.now();
@@ -444,6 +445,7 @@ function requestAIMove() {
     board: board.map((row) => row.map((p) => (p ? { ...p } : null))),
     side: turn,
     level: mode,
+    recent: posHistory.slice(-16),
     token,
   };
   if (aiWorker) {
@@ -452,7 +454,7 @@ function requestAIMove() {
     (aiModule ??= import('./ai.js')).then(({ findBestMove }) => {
       setTimeout(() => {
         if (token !== aiToken) return;
-        onAIResult({ token, result: findBestMove(payload.board, payload.side, payload.level) });
+        onAIResult({ token, result: findBestMove(payload.board, payload.side, payload.level, payload.recent) });
       }, 30);
     });
   }
@@ -606,6 +608,7 @@ function newGame() {
   busy = false;
   board = initialBoard();
   turn = RED;
+  posHistory = [hashBoard(board)];
   gameStartTime = Date.now();
   undoCount = 0;
   stopConfetti();
@@ -625,6 +628,7 @@ function resetTo(customBoard, turnSide) {
   aiThinking = false;
   board = customBoard;
   if (turnSide) turn = turnSide;
+  posHistory = [hashBoard(board)];
   history = [];
   capturedBy = { [RED]: [], [BLACK]: [] };
   over = false;
@@ -662,6 +666,7 @@ function doMove(from, to) {
   p.userData.r = to.r;
   p.userData.c = to.c;
   history.push({ from, to, captured, nota });
+  posHistory.push(hashBoard(board));
   syncLastMoveMark();
   clearSelection();
   busy = true;
@@ -718,6 +723,7 @@ function showBanner() {
 
 function undoPly() {
   const h = history.pop();
+  posHistory.pop();
   const p = pieceAt(h.to.r, h.to.c);
   applyMove(board, h.to, h.from);
   p.userData.r = h.from.r;

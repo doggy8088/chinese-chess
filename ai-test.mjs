@@ -1,5 +1,5 @@
 // AI 引擎自測
-import { initialBoard, applyMove, legalMoves, inCheck, RED, BLACK } from './game.js';
+import { initialBoard, applyMove, legalMoves, inCheck, RED, BLACK, hashBoard } from './game.js';
 import { findBestMove, evaluate } from './ai.js';
 
 let failed = 0;
@@ -73,6 +73,34 @@ for (const lv of ['easy', 'medium', 'hard']) {
       return p && p.side === BLACK && legalMoves(nb, r, c).length > 0;
     }));
   ok(mated, `hard：找到一步殺（實走 ${JSON.stringify(mv)}，score=${mv?.score}）`);
+}
+
+// ---------- 殺棋：困難模式看到兩步連將殺（應將靜態搜索＋將軍延伸） ----------
+{
+  const b = emptyBoard();
+  b[9][4] = { type: 'K', side: BLACK };
+  b[8][6] = { type: 'C', side: BLACK }; // 黑砲只能墊將，被吃後無子可擋
+  b[0][0] = { type: 'K', side: RED };
+  b[8][0] = { type: 'R', side: RED };  // 控制 row 8 的宮位出口
+  b[5][8] = { type: 'R', side: RED };  // 俥進 (9,8) 開始連將
+  const mv = findBestMove(b, RED, 'hard');
+  ok(mv && mv.score > 100000 - 200,
+    `hard：看出兩步連將殺（實走 ${JSON.stringify(mv?.from)}→${JSON.stringify(mv?.to)}，score=${mv?.score}）`);
+}
+
+// ---------- 重複局面：近期出現過的局面要扣分避開 ----------
+{
+  const b = emptyBoard();
+  b[0][0] = { type: 'K', side: RED };
+  b[9][4] = { type: 'K', side: BLACK };
+  const mv1 = findBestMove(b, BLACK, 'medium');
+  const nb1 = b.map((r) => r.slice());
+  applyMove(nb1, mv1.from, mv1.to);
+  const h = hashBoard(nb1);
+  const mv2 = findBestMove(b, BLACK, 'medium', [h]);
+  const nb2 = b.map((r) => r.slice());
+  applyMove(nb2, mv2.from, mv2.to);
+  ok(hashBoard(nb2) !== h, `medium：給定近期局面後避開重複（第一次 ${JSON.stringify(mv1?.to)}，第二次 ${JSON.stringify(mv2?.to)}）`);
 }
 
 // ---------- 評估函數對稱 ----------
