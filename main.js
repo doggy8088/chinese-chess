@@ -1168,22 +1168,39 @@ btnHelp.addEventListener('click', () => {
   btnHelp.setAttribute('aria-pressed', String(on));
   closeHudMenu();
 });
-function goHome(done) {
+function flyTo(pos, tgt, done) {
   cancelCameraTween();
   const camFrom = camera.position.clone();
   const tgtFrom = controls.target.clone();
   tween(650, (k) => {
-    camera.position.lerpVectors(camFrom, HOME.pos, k);
-    controls.target.lerpVectors(tgtFrom, HOME.tgt, k);
+    camera.position.lerpVectors(camFrom, pos, k);
+    controls.target.lerpVectors(tgtFrom, tgt, k);
     // 補間途中需自行更新相機朝向（tick 可能正跳過 controls.update()），
-    // 否則抵達 HOME 後視線方向是舊的
+    // 否則抵達後視線方向是舊的
     camera.lookAt(controls.target);
   }, done, 0, 'camera');
 }
 function cancelCameraTween() {
   for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i].tag === 'camera') tweens.splice(i, 1);
 }
-document.getElementById('btnView').addEventListener('click', () => goHome());
+
+// 「視角」按鈕：在多個預設機位之間循環切換
+const CAMERA_VIEWS = [
+  { label: '紅方', dist: 14.8, polar: 45, azimuth: -90, tgt: HOME_TGT },
+  { label: '黑方', dist: 14.8, polar: 45, azimuth: 90, tgt: new THREE.Vector3(0, -0.1, -0.2) },
+  { label: '側面', dist: 14.8, polar: 55, azimuth: 0, tgt: new THREE.Vector3(0, -0.1, 0.2) },
+  { label: '俯視', dist: 14.2, polar: 8, azimuth: -90, tgt: new THREE.Vector3(0, 0, 0.2) },
+];
+let viewIdx = 0;
+document.getElementById('btnView').addEventListener('click', () => {
+  viewIdx = (viewIdx + 1) % CAMERA_VIEWS.length;
+  const v = CAMERA_VIEWS[viewIdx];
+  const pos = new THREE.Vector3()
+    .setFromSphericalCoords(v.dist, THREE.MathUtils.degToRad(v.polar), THREE.MathUtils.degToRad(v.azimuth))
+    .add(v.tgt);
+  flyTo(pos, v.tgt);
+  toast(`視角：${v.label}`);
+});
 
 // 固定視角：鎖定鏡頭後拖曳／滾輪都不再改變視角（Issue #2）
 let viewLocked = false;
