@@ -66,13 +66,17 @@ h1 { font-size: 19px; letter-spacing: 6px; font-weight: 700; }
   font-size: 14px;
 }
 
-/* 固定視角開關：浮動在棋盤黑底左上角，與回合徽章對稱 */
+/* 固定視角開關：浮動在棋盤黑底左上角，與回合徽章對稱。
+   平時只顯示圖釘圖示，滑鼠 hover／鍵盤 focus 時以動畫展開文字標籤 */
 #btnLock {
   position: absolute;
   top: 12px;
   left: 14px;
   z-index: 6;
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px;
   border-radius: 999px;
   background: rgba(23, 18, 13, 0.78);
   backdrop-filter: blur(6px);
@@ -80,6 +84,24 @@ h1 { font-size: 19px; letter-spacing: 6px; font-weight: 700; }
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   border-color: rgba(58, 46, 34, 0.9);
   font-size: 14px;
+  transition: gap 0.28s ease, padding 0.28s ease, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#btnLock svg { flex: none; }
+#btnLock .lbl {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  letter-spacing: 1px;
+  transition: max-width 0.28s ease, opacity 0.2s ease;
+}
+#btnLock:hover, #btnLock:focus-visible {
+  gap: 7px;
+  padding: 8px 14px;
+}
+#btnLock:hover .lbl, #btnLock:focus-visible .lbl {
+  max-width: 104px;
+  opacity: 1;
 }
 #btnLock.on {
   color: var(--gold);

@@ -7,7 +7,7 @@ import {
   ROWS, COLS, RED, BLACK,
   initialBoard, legalMoves, applyMove, inCheck,
   hasAnyLegalMove, name, notation, hashBoard,
-} from './game.js?v=2886a7c63a';
+} from './game.js?v=ec8ab932de';
 
 // ---------------- 常數 ----------------
 const CELL = 1;
@@ -429,7 +429,7 @@ let aiMoveStart = 0;
 let aiWorker = null;
 let aiModule = null;   // Worker 不可用時的主執行緒後備
 try {
-  aiWorker = new Worker(new URL('./ai-worker.js?v=2886a7c63a', import.meta.url), { type: 'module' });
+  aiWorker = new Worker(new URL('./ai-worker.js?v=ec8ab932de', import.meta.url), { type: 'module' });
   aiWorker.onmessage = (e) => onAIResult(e.data);
   aiWorker.onerror = () => {
     aiWorker = null;
@@ -451,7 +451,7 @@ function requestAIMove() {
   if (aiWorker) {
     aiWorker.postMessage(payload);
   } else {
-    (aiModule ??= import('./ai.js?v=2886a7c63a')).then(({ findBestMove }) => {
+    (aiModule ??= import('./ai.js?v=ec8ab932de')).then(({ findBestMove }) => {
       setTimeout(() => {
         if (token !== aiToken) return;
         onAIResult({ token, result: findBestMove(payload.board, payload.side, payload.level, payload.recent) });
@@ -1225,7 +1225,7 @@ let viewLocked = false;
 const btnLock = document.getElementById('btnLock');
 function syncLockUI() {
   controls.enabled = !viewLocked;
-  btnLock.textContent = viewLocked ? '固定視角：開' : '固定視角：關';
+  document.getElementById('btnLockText').textContent = viewLocked ? '固定視角：開' : '固定視角：關';
   btnLock.setAttribute('aria-pressed', String(viewLocked));
   btnLock.classList.toggle('on', viewLocked);
 }
