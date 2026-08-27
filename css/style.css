@@ -65,6 +65,27 @@ h1 { font-size: 19px; letter-spacing: 6px; font-weight: 700; }
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   font-size: 14px;
 }
+
+/* 固定視角開關：浮動在棋盤黑底左上角，與回合徽章對稱 */
+#btnLock {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 6;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(23, 18, 13, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  border-color: rgba(58, 46, 34, 0.9);
+  font-size: 14px;
+}
+#btnLock.on {
+  color: var(--gold);
+  border-color: rgba(217, 164, 65, 0.55);
+  box-shadow: 0 0 16px rgba(217, 164, 65, 0.25);
+}
 #turnDot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); box-shadow: 0 0 9px var(--red); }
 
 button {

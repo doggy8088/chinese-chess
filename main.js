@@ -1209,6 +1209,7 @@ function syncLockUI() {
   controls.enabled = !viewLocked;
   btnLock.textContent = viewLocked ? '固定視角：開' : '固定視角：關';
   btnLock.setAttribute('aria-pressed', String(viewLocked));
+  btnLock.classList.toggle('on', viewLocked);
 }
 btnLock.addEventListener('click', () => {
   viewLocked = !viewLocked;
