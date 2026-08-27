@@ -385,8 +385,8 @@ const sfx = {
 // ---------------- tween ----------------
 const tweens = [];
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
-function tween(dur, fn, done, delay = 0) {
-  tweens.push({ t0: performance.now() + delay, dur, fn, done });
+function tween(dur, fn, done, delay = 0, tag = null) {
+  tweens.push({ t0: performance.now() + delay, dur, fn, done, tag });
 }
 // 分頁隱藏時 rAF 會暫停；用計時器低頻補跑主迴圈，避免棋局卡在動畫中
 setInterval(() => { if (document.hidden) tick(performance.now()); }, 500);
@@ -1148,15 +1148,19 @@ document.getElementById('btnSound').addEventListener('click', (e) => {
   e.currentTarget.setAttribute('aria-pressed', String(!muted));
 });
 function goHome(done) {
+  cancelCameraTween();
   const camFrom = camera.position.clone();
   const tgtFrom = controls.target.clone();
   tween(650, (k) => {
     camera.position.lerpVectors(camFrom, HOME.pos, k);
     controls.target.lerpVectors(tgtFrom, HOME.tgt, k);
-    // 鎖定期間 tick() 跳過 controls.update()（其內部才會 lookAt），
-    // 補間途中需自行更新相機朝向，否則抵達 HOME 後視線方向是舊的
+    // 補間途中需自行更新相機朝向（tick 可能正跳過 controls.update()），
+    // 否則抵達 HOME 後視線方向是舊的
     camera.lookAt(controls.target);
-  }, done);
+  }, done, 0, 'camera');
+}
+function cancelCameraTween() {
+  for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i].tag === 'camera') tweens.splice(i, 1);
 }
 document.getElementById('btnView').addEventListener('click', () => goHome());
 
@@ -1171,7 +1175,8 @@ function syncLockUI() {
 btnLock.addEventListener('click', () => {
   viewLocked = !viewLocked;
   syncLockUI();
-  if (viewLocked) goHome(); // 鎖定時先回到標準機位再凍結
+  // 以「現狀」固定：凍結當下視角與進行中的相機補間，不做歸位
+  if (viewLocked) cancelCameraTween();
 });
 syncLockUI();
 document.getElementById('btnAgain').addEventListener('click', newGame);
