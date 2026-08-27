@@ -4,7 +4,7 @@
 // 難度：easy（淺層＋隨機）/ medium（3 層）/ hard（迭代加深至 6 層，殘局更深）
 // 加強：置換表、killer/history 排序、將軍延伸、應將靜態搜索、重複局面偵測
 // ============================================================
-import { ROWS, COLS, RED, BLACK, getMoves, legalMoves, kingsFacing, kingPos, inCheck, hashBoard } from './game.js?v=2a878ebde4';
+import { ROWS, COLS, RED, BLACK, getMoves, legalMoves, kingsFacing, kingPos, inCheck, hashBoard } from './game.js?v=4db85cd210';
 
 const INF = 1e9;
 const MATE = 100000;
@@ -76,16 +76,126 @@ function pst(p, r, c) {
   }
 }
 
-/** 全盤評估：紅方視角（紅多為正） */
+const EVAL_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/** 機動性：不配置陣列的輕量走法數（車：可走格數） */
+function rookMobility(b, r, c) {
+  let m = 0;
+  for (const [dr, dc] of EVAL_DIRS) {
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+      m++;
+      if (b[nr][nc]) break;
+      nr += dr; nc += dc;
+    }
+  }
+  return m;
+}
+
+/** 炮：翻山前可移動格＋翻山後可吃的第一個子 */
+function cannonMobility(b, r, c) {
+  let m = 0;
+  for (const [dr, dc] of EVAL_DIRS) {
+    let nr = r + dr, nc = c + dc, screen = false;
+    while (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+      const p = b[nr][nc];
+      if (!screen) {
+        if (p) screen = true;
+        else m++;
+      } else if (p) { m++; break; }
+      nr += dr; nc += dc;
+    }
+  }
+  return m;
+}
+
+/** 馬：不蹩腿的落點數 */
+function knightMobility(b, r, c) {
+  let m = 0;
+  for (const [dr, dc, leg] of N_STEPS) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+    if (b[r + leg[0]][c + leg[1]]) continue; // 蹩馬腿
+    m++;
+  }
+  return m;
+}
+
+/** 王的直線受壓：敵車／炮與王同線且遮擋稀少（窺王） */
+function filePressure(b, k, foe) {
+  if (!k) return 0;
+  let pen = 0;
+  for (const dir of [1, -1]) {
+    let r = k.r + dir, blockers = 0;
+    while (r >= 0 && r < ROWS) {
+      const p = b[r][k.c];
+      if (p) {
+        if (p.side === foe) {
+          if (p.type === 'R') pen += blockers === 0 ? 16 : 8;
+          else if (p.type === 'C' && blockers === 1) pen += 10;
+          break;
+        }
+        if (++blockers > 2) break;
+      }
+      r += dir;
+    }
+  }
+  return pen;
+}
+
+/** 兵：過河後的通頭兵加成＋兵臨城下（逼近敵帥） */
+function pawnBonus(b, r, c, side, ek) {
+  const rr = side === RED ? r : 9 - r;
+  if (rr < 5) return 0;
+  const fwd = side === RED ? 1 : -1;
+  let v = 0;
+  let passed = true;
+  for (let r2 = r + fwd; r2 >= 0 && r2 < ROWS; r2 += fwd) {
+    const p = b[r2][c];
+    if (p && p.type === 'P' && p.side !== side) { passed = false; break; }
+  }
+  if (passed) v += 8;
+  if (ek) {
+    const dist = Math.max(Math.abs(r - ek.r), Math.abs(c - ek.c));
+    if (dist <= 2) v += 10;
+  }
+  return v;
+}
+
+/** 全盤評估：紅方視角（紅多為正）
+ *  子力＋位置表＋機動性（車炮馬）＋士象完整度＋窺王壓力＋兵陣 */
 export function evaluate(b) {
   let s = 0;
+  const kings = { [RED]: null, [BLACK]: null };
+  const guards = { [RED]: 0, [BLACK]: 0 };
+  const bishops = { [RED]: 0, [BLACK]: 0 };
+  const pawns = [];
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
       const p = b[r][c];
       if (!p) continue;
-      const v = VAL[p.type] + pst(p, r, c);
+      let v = VAL[p.type] + pst(p, r, c);
+      if (p.type === 'R') v += rookMobility(b, r, c);
+      else if (p.type === 'C') v += cannonMobility(b, r, c) >> 1;
+      else if (p.type === 'N') v += knightMobility(b, r, c) * 2;
+      else if (p.type === 'A') guards[p.side]++;
+      else if (p.type === 'B') bishops[p.side]++;
+      else if (p.type === 'P') pawns.push(p.side, r, c);
+      else if (p.type === 'K') kings[p.side] = { r, c };
       s += p.side === RED ? v : -v;
     }
+  // 士象完整度：缺仕缺象會被車炮趁虛而入
+  s -= (2 - guards[RED]) * 10 + (2 - bishops[RED]) * 8;
+  s += (2 - guards[BLACK]) * 10 + (2 - bishops[BLACK]) * 8;
+  // 窺王：敵車／炮與我王同線且遮擋稀少
+  s -= filePressure(b, kings[RED], BLACK);
+  s += filePressure(b, kings[BLACK], RED);
+  // 兵陣：通頭兵、兵臨城下
+  for (let i = 0; i < pawns.length; i += 3) {
+    const side = pawns[i], r = pawns[i + 1], c = pawns[i + 2];
+    const v = pawnBonus(b, r, c, side, kings[side === RED ? BLACK : RED]);
+    s += side === RED ? v : -v;
+  }
   return s;
 }
 
@@ -340,7 +450,7 @@ function negamax(b, side, depth, alpha, beta, ply) {
 const LEVELS = {
   easy:   { maxDepth: 1, timeMs: 400,  window: 50, randomRate: 0.3 },
   medium: { maxDepth: 3, timeMs: 900,  window: 8,  randomRate: 0 },
-  hard:   { maxDepth: 6, timeMs: 2200, window: 0,  randomRate: 0 },
+  hard:   { maxDepth: 6, timeMs: 4500, window: 0,  randomRate: 0 },
 };
 
 /**
@@ -373,8 +483,10 @@ export function findBestMove(srcBoard, side, level = 'medium', recent = []) {
   let pieceCount = 0;
   for (const row of b) for (const p of row) if (p) pieceCount++;
   let maxDepth = cfg.maxDepth;
-  if (level === 'hard' && pieceCount <= 10) maxDepth += 2;
-  else if (level === 'medium' && pieceCount <= 8) maxDepth += 1;
+  if (level === 'hard') {
+    if (pieceCount <= 6) maxDepth = Math.max(maxDepth, 12);       // 子少分支小，可深算
+    else if (pieceCount <= 10) maxDepth += 2;
+  } else if (level === 'medium' && pieceCount <= 8) maxDepth += 1;
 
   nodes = 0;
   deadline = Date.now() + cfg.timeMs;
