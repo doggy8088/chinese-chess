@@ -1170,14 +1170,29 @@ btnHelp.addEventListener('click', () => {
 });
 function flyTo(pos, tgt, done) {
   cancelCameraTween();
-  const camFrom = camera.position.clone();
   const tgtFrom = controls.target.clone();
-  tween(650, (k) => {
-    camera.position.lerpVectors(camFrom, pos, k);
-    controls.target.lerpVectors(tgtFrom, tgt, k);
+  // 以「球座標」補間（繞著目標水平環繞），直線 lerp 在 180° 換邊時
+  // 相機會橫越棋盤正上方，畫面劇烈甩動、體感很差
+  const sphFrom = new THREE.Spherical().setFromVector3(camera.position.clone().sub(tgtFrom));
+  const sphTo = new THREE.Spherical().setFromVector3(pos.clone().sub(tgt));
+  let dTheta = sphTo.theta - sphFrom.theta;
+  // 取最短角距離；剛好半圈時固定逆時針，方向不會忽左忽右
+  while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+  while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+  if (dTheta === -Math.PI) dTheta = Math.PI;
+  // 旋轉角度越大、補間越久，讓換邊時節奏依然從容
+  const dur = 480 + (Math.abs(dTheta) / Math.PI) * 480;
+  tween(dur, (k) => {
+    const tgtNow = tgtFrom.clone().lerp(tgt, k);
+    const sph = new THREE.Spherical(
+      sphFrom.radius + (sphTo.radius - sphFrom.radius) * k,
+      sphFrom.phi + (sphTo.phi - sphFrom.phi) * k,
+      sphFrom.theta + dTheta * k,
+    );
+    camera.position.setFromSpherical(sph).add(tgtNow);
     // 補間途中需自行更新相機朝向（tick 可能正跳過 controls.update()），
     // 否則抵達後視線方向是舊的
-    camera.lookAt(controls.target);
+    camera.lookAt(tgtNow);
   }, done, 0, 'camera');
 }
 function cancelCameraTween() {
