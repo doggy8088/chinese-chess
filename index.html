@@ -94,15 +94,19 @@
         <option value="pvp">雙人對弈</option>
       </select>
       <button id="btnUndo" type="button">悔棋</button>
-      <button id="btnNew" type="button">新對局</button>
-      <button id="btnSound" type="button" aria-pressed="true">音效：開</button>
-      <button id="btnView" type="button">視角</button>
-      <button id="btnLock" type="button" aria-pressed="false">固定視角：關</button>
-      <button id="btnFull" type="button" aria-pressed="false">全螢幕</button>
-      <a id="repoLink" href="https://github.com/doggy8088/chinese-chess" target="_blank" rel="noopener" title="在 GitHub 檢視原始碼">
-        <svg viewBox="0 0 16 16" aria-hidden="true" width="15" height="15" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.89-2.92-2.75 0-.53.19-1.07.5-1.48-.05-.12-.22-.62.05-1.29 0 0 .61-.19 2 .74a4.7 4.7 0 0 1 2.55 0c1.39-.94 2-.74 2-.74.27.67.1 1.17.05 1.29.31.41.5.94.5 1.48 0 1.87-1.14 2.55-2.93 2.75.29.25.55.74.55 1.5 0 1.08-.01 1.96-.01 2.23 0 .21.15.46.55.38A7.99 7.99 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        <span>GitHub</span>
-      </a>
+      <button id="btnNew" type="button"><span class="t-full">新對局</span><span class="t-short">新局</span></button>
+      <button id="btnMore" type="button" aria-haspopup="true" aria-expanded="false" title="更多設定" aria-label="更多設定">⋯</button>
+      <div id="hudMore">
+        <button id="btnHelp" type="button" aria-pressed="false">玩法說明</button>
+        <button id="btnSound" type="button" aria-pressed="true">音效：開</button>
+        <button id="btnView" type="button">視角</button>
+        <button id="btnLock" type="button" aria-pressed="false">固定視角：關</button>
+        <button id="btnFull" type="button" aria-pressed="false">全螢幕</button>
+        <a id="repoLink" href="https://github.com/doggy8088/chinese-chess" target="_blank" rel="noopener" title="在 GitHub 檢視原始碼">
+          <svg viewBox="0 0 16 16" aria-hidden="true" width="15" height="15" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.89-2.92-2.75 0-.53.19-1.07.5-1.48-.05-.12-.22-.62.05-1.29 0 0 .61-.19 2 .74a4.7 4.7 0 0 1 2.55 0c1.39-.94 2-.74 2-.74.27.67.1 1.17.05 1.29.31.41.5.94.5 1.48 0 1.87-1.14 2.55-2.93 2.75.29.25.55.74.55 1.5 0 1.08-.01 1.96-.01 2.23 0 .21.15.46.55.38A7.99 7.99 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
     </div>
   </header>
 

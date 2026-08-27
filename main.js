@@ -1147,6 +1147,27 @@ document.getElementById('btnSound').addEventListener('click', (e) => {
   e.currentTarget.textContent = muted ? '音效：關' : '音效：開';
   e.currentTarget.setAttribute('aria-pressed', String(!muted));
 });
+// 「⋯」更多選單（小螢幕）：開合、點外處／Esc 關閉、玩法說明開關
+const hudMore = document.getElementById('hudMore');
+const btnMore = document.getElementById('btnMore');
+const btnHelp = document.getElementById('btnHelp');
+function closeHudMenu() {
+  hudMore.classList.remove('open');
+  btnMore.setAttribute('aria-expanded', 'false');
+}
+btnMore.addEventListener('click', () => {
+  const open = hudMore.classList.toggle('open');
+  btnMore.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('pointerdown', (e) => {
+  if (hudMore.classList.contains('open') && !hudMore.contains(e.target) && !btnMore.contains(e.target)) closeHudMenu();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHudMenu(); });
+btnHelp.addEventListener('click', () => {
+  const on = document.getElementById('left').classList.toggle('show-help');
+  btnHelp.setAttribute('aria-pressed', String(on));
+  closeHudMenu();
+});
 function goHome(done) {
   cancelCameraTween();
   const camFrom = camera.position.clone();
