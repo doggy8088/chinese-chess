@@ -31,6 +31,17 @@ python3 -m http.server 8080
 
 然後開瀏覽器访问 <http://localhost:8080>。
 
+## 部署與快取
+
+GitHub Pages 對所有資源回應 `Cache-Control: max-age=600`，更版後瀏覽器最多可能快取 10 分鐘的舊檔。本專案以「**內容雜湊版本號**」解決：每次更新 JS/CSS 後、push 前執行
+
+```bash
+node tools/bump-cache.mjs           # 重算雜湊並改寫所有引用位址
+node tools/bump-cache.mjs --check   # 只檢查是否需要更新（CI／hook 用）
+```
+
+腳本會計算 `css/style.css`、`main.js`、`game.js`、`ai.js`、`ai-worker.js` 的內容雜湊，並把 `?v=<hash>` 寫進 index.html 與所有本地模組的引用位址——**內容一變、網址就變**，瀏覽器拿到新版 index.html 後會立即載入全新資源，不再受快取拖延。重複執行為冪等操作（內容沒變就不改寫檔案）。
+
 ## 測試
 
 ```bash

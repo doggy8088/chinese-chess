@@ -90,9 +90,10 @@ for (const lv of ['easy', 'medium', 'hard']) {
 
 // ---------- 重複局面：近期出現過的局面要扣分避開 ----------
 {
+  // 注意：紅帥須在九宮內（(0,0) 會造成紅方無子可動→全為殺棋分數，測試失真）
   const b = emptyBoard();
-  b[0][0] = { type: 'K', side: RED };
-  b[9][4] = { type: 'K', side: BLACK };
+  b[0][3] = { type: 'K', side: RED };
+  b[9][5] = { type: 'K', side: BLACK };
   const mv1 = findBestMove(b, BLACK, 'medium');
   const nb1 = b.map((r) => r.slice());
   applyMove(nb1, mv1.from, mv1.to);
